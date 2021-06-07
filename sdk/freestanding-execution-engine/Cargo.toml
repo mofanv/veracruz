@@ -18,7 +18,9 @@ serde = { version = "1.0.103", features = ["derive"] }
 toml = "0.5.5"
 wast = "=35.0.0"
 wat = "<1.0.38"
-wasi-types = { git = "https://github.com/veracruz-project/wasi-types.git", branch = "veracruz" }
+#wasi-types = { git = "https://github.com/veracruz-project/wasi-types.git", branch = "veracruz" }
+wasi-types = { path = "../../wasi-types" }
+pinecone = "0.2.3"
 
 [[bin]]
 name = "freestanding-execution-engine"
