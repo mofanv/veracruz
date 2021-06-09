@@ -31,6 +31,7 @@ use wasi_types::{
     IoVec, LookupFlags, OpenFlags, RiFlags, Rights, RoFlags, SdFlags, SetTimeFlags, SiFlags,
     Signal, Subscription, SubscriptionClock, SubscriptionFdReadwrite, SubscriptionUnion, Whence,
 };
+use log::info;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Common constants.
