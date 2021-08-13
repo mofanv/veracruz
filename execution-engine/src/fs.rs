@@ -18,7 +18,7 @@ use platform_services::{getrandom, result};
 use std::{
     collections::HashMap,
     convert::{AsRef, TryInto},
-    path::{Path, PathBuf},
+    path::{Path, PathBuf, Component},
     vec::Vec,
 };
 use veracruz_utils::policy::principal::{Principal, RightsTable, StandardStream};
@@ -96,13 +96,12 @@ impl InodeEntry {
 
     /// Insert a file to the directory at `self`.
     /// Return ErrNo:: NotDir if `self` is not a directory.
-    pub(self) fn insert_file(&mut self, path: impl AsRef<Path>, inode: Inode) -> FileSystemResult<()> {
-        self.data.insert_file(path, inode)
+    pub(self) fn insert<T: AsRef<Path>>(&mut self, path: T, inode: Inode) -> FileSystemResult<()> {
+        self.data.insert(path, inode)
     }
 
-    /// Insert a file to the directory at `self`.
-    /// Return ErrNo:: NotDir if `self` is not a directory.
-    pub(self) fn get_inode_by_path(&self, path: impl AsRef<Path>) -> FileSystemResult<Inode> {
+    /// Return the inode of `path`.
+    pub(self) fn get_inode_by_path<T: AsRef<Path>>(&self, path: T) -> FileSystemResult<Inode> {
         self.data.get_inode_by_path(path)
     }
 
@@ -228,7 +227,7 @@ impl InodeImpl {
 
     /// Insert a file to the directory at `self`.
     /// Return ErrNo:: NotDir if `self` is not a directory.
-    pub(self) fn insert_file(&mut self, path: impl AsRef<Path>, inode: Inode) -> FileSystemResult<()> {
+    pub(self) fn insert<T: AsRef<Path>>(&mut self, path: T, inode: Inode) -> FileSystemResult<()> {
         match self {
             InodeImpl::Directory(path_table) => path_table.insert(path.as_ref().to_path_buf(), inode.clone()),
             _otherwise => return Err(ErrNo::NotDir),
@@ -238,7 +237,7 @@ impl InodeImpl {
 
     /// Insert a file to the directory at `self`.
     /// Return ErrNo:: NotDir if `self` is not a directory.
-    pub(self) fn get_inode_by_path(&self, path: impl AsRef<Path>) -> FileSystemResult<Inode> {
+    pub(self) fn get_inode_by_path<T: AsRef<Path>>(&self, path: T) -> FileSystemResult<Inode> {
         match self {
             InodeImpl::Directory(path_table) => Ok(path_table.get(path.as_ref()).ok_or(ErrNo::NoEnt)?.clone()),
             _otherwise => return Err(ErrNo::NotDir),
@@ -383,7 +382,6 @@ impl FileSystem {
             // Rights are assumed to be already configured by the execution engine in the rights table
             // at that point.
             // Base rights are ignored and replaced with the default rights
-            println!("AA:{:?}", std_streams_table);
             let (path, fd_number, inode_number) = match std_stream {
                 StandardStream::Stdin(file_rights) => (file_rights.file_name(), 0, 0),
                 StandardStream::Stdout(file_rights) => (file_rights.file_name(), 1, 1),
@@ -442,8 +440,7 @@ impl FileSystem {
         Ok(())
     }
 
-    /// Install a dir and attatch it to `inode`.
-    /// NOTE: Since we do not have dir structure, it installs a file without any content for now.
+    /// Install a dir of `inode` and attatch it under the parent inode `parent`.
     fn add_dir<T: AsRef<Path>>(&mut self, parent: Inode, path: T, new_inode: Inode) -> FileSystemResult<()> {
         let file_stat = FileStat {
             device: (0u64).into(),
@@ -463,10 +460,12 @@ impl FileSystem {
             path: path.clone(),
             data: InodeImpl::new_directory(new_inode.clone(),parent.clone()),
         };
+        // Add the map from the new inode to inode implementation.
         self.inode_table.insert(new_inode.clone(), node);
-        // If parent is not equal to new_inode, it means `new_inode` is not a ROOT.
+        // If parent is not equal to new_inode, it means `new_inode` is not a ROOT,
+        // Hence, add the new inode into the parent inode dir.
         if parent != new_inode {
-            self.inode_table.get_mut(&parent).ok_or(ErrNo::NoEnt)?.insert_file(path.clone(), new_inode.clone())?;
+            self.inode_table.get_mut(&parent).ok_or(ErrNo::NoEnt)?.insert(path.clone(), new_inode.clone())?;
         }
         Ok(())
     }
@@ -491,8 +490,10 @@ impl FileSystem {
             path: path.as_ref().to_path_buf(),
             data: InodeImpl::File(raw_file_data.to_vec()),
         };
+        // Add the map from the new inode to inode implementation.
         self.inode_table.insert(new_inode.clone(), node);
-        self.inode_table.get_mut(&parent).ok_or(ErrNo::NoEnt)?.insert_file(path, new_inode.clone())?;
+        // Add the new inode into the parent inode dir.
+        self.inode_table.get_mut(&parent).ok_or(ErrNo::NoEnt)?.insert(path, new_inode.clone())?;
         Ok(())
     }
 
@@ -930,14 +931,16 @@ impl FileSystem {
         Ok(rst)
     }
 
-    /// The stub implementation of `path_create_directory`. Return unsupported error `NoSys`.
+    /// The implementation of `path_create_directory`. 
     #[inline]
     pub(crate) fn path_create_directory<T: AsRef<Path>>(
         &mut self,
         fd: Fd,
         path: T,
     ) -> FileSystemResult<()> {
+        info!("call path_create_directory with fd {:?} and path {:?}", fd, path.as_ref());
         self.check_right(&fd, Rights::PATH_CREATE_DIRECTORY)?;
+        info!("call path_create_directory capability check passes");
         let (parent_inode, parent_inode_entry) = self.get_inode_by_fd(&fd)?;
         if !parent_inode_entry.is_dir() {
             return Err(ErrNo::NotDir);
@@ -946,13 +949,24 @@ impl FileSystem {
         if self.get_inode_by_path(&fd, path.as_ref()).is_ok() {
             return Err(ErrNo::Exist)
         }
-        // Create the path
-        path.as_ref().components().fold(Ok(parent_inode), |last, component|{
+        info!("call path_create_directory starts creating dir");
+        // Create ALL missing dir in the path
+        // In each round, the `last` carries the current parent inode or an error
+        // and component is the next component in the path.
+        path.as_ref().components().fold(Ok(parent_inode), |last: FileSystemResult<Inode>, component| {
             // If there is an error
             let last = last?;
-            // Find the next inode
-            self.get_inode(&last)?.get_inode_by_path(component)
+            info!("call path_create_directory last {:?} and components {:?}", last, component);
+            let component_path = match component {
+                Component::Normal(p) => Ok(p),
+                _otherwise => Err(ErrNo::Inval),
+            }?;
+            let new_inode = self.new_inode()?;
+            self.add_dir(last, component_path, new_inode)?;
+            // return the next inode, preparing for the next round.
+            Ok(new_inode)
         })?;
+        info!("call path_create_directory done");
         Ok(())
     }
 
@@ -1048,7 +1062,7 @@ impl FileSystem {
             return Err(ErrNo::NotDir);
         }
         // Read the right related to the principal.
-        // NOTE: A pontential better way to control capability is to
+        // NOTE: A correct and better way to control capability is to
         // separate the Fd space of of different participants.
         let principal_right = if *principal != Principal::InternalSuperUser {
             self.get_right(&principal, absolute_path.as_path())?
@@ -1362,11 +1376,14 @@ impl FileSystem {
         file_name: T,
     ) -> FileSystemResult<Rights> {
         let file_name = file_name.as_ref();
-        self.rights_table
+        let principal_rights_table = self.rights_table
             .get(principal)
-            .ok_or(ErrNo::Access)?
-            .get(file_name)
-            .map(|r| r.clone())
-            .ok_or(ErrNo::Access)
+            .ok_or(ErrNo::Access)?;
+        for ancestor in file_name.ancestors() {
+            if let Some(o) =  principal_rights_table.get(ancestor) {
+                return Ok(o.clone());
+            }
+        }
+        Err(ErrNo::Access)
     }
 }
