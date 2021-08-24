@@ -29,7 +29,7 @@ use lazy_static::lazy_static;
 use execution_engine::{fs::FileSystem, execute};
 use veracruz_utils::policy::{
     policy::Policy,
-    principal::{ExecutionStrategy, Principal},
+    principal::Principal,
 };
 use wasi_types::ErrNo;
 
@@ -159,7 +159,7 @@ impl ProtocolState {
         }
         // Set the modified flag 
         self.is_modified = true;
-        self.vfs.lock()?.write_file_by_filename(
+        self.vfs.lock()?.write_file_by_absolute_path(
             client_id,
             file_name,
             data,
@@ -189,7 +189,7 @@ impl ProtocolState {
             return Err(RuntimeManagerError::FileSystemError(ErrNo::Access));
         }
         self.is_modified = true;
-        self.vfs.lock()?.write_file_by_filename(
+        self.vfs.lock()?.write_file_by_absolute_path(
             client_id,
             file_name,
             data,
@@ -205,7 +205,7 @@ impl ProtocolState {
         client_id: &Principal,
         file_name: &str,
     ) -> Result<Option<Vec<u8>>, RuntimeManagerError> {
-        let rst = self.vfs.lock()?.read_file_by_filename(
+        let rst = self.vfs.lock()?.read_file_by_absolute_path(
             client_id,
             file_name,
         )?;
