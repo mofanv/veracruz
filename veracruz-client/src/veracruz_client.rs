@@ -309,7 +309,8 @@ impl VeracruzClient {
                 Ok(data) => data,
             };
             let expected_bytes = hex::decode(expected)?;
-
+	    println!("expected: {}", expected);
+	    println!("received: {}", hex::encode(&received[..]));
             if &received[..] == expected_bytes.as_slice() {
                 return Ok(());
             }
