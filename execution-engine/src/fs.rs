@@ -1475,18 +1475,10 @@ impl FileSystem {
         file_name: T,
     ) -> Result<Vec<u8>, ErrNo> {
         let file_name = file_name.as_ref();
-<<<<<<< HEAD
-        info!("before: {:?}",file_name);
-=======
->>>>>>> upstream/wasi-host-abi
         let file_name = file_name
             .strip_prefix("/")
             .unwrap_or(file_name)
             .clone();
-<<<<<<< HEAD
-        info!("after: {:?}",file_name);
-=======
->>>>>>> upstream/wasi-host-abi
         info!("read_file_by_filename: {:?}", file_name);
         let fd = self.path_open(
             principal,
