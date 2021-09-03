@@ -65,13 +65,16 @@ mod tests {
         "../test-collateral/number-stream-accumulation.json";
     const BASIC_FILE_READ_WRITE_POLICY: &'static str =
         "../test-collateral/basic_file_read_write.json";
+    const DEEP_LEARNING_SERVER_POLICY: &'static str =
+	"../test-collateral/deep_learning_server.json";
+
     const CA_CERT: &'static str = "../test-collateral/CACert.pem";
     const CA_KEY: &'static str = "../test-collateral/CAKey.pem";
     const CLIENT_CERT: &'static str = "../test-collateral/client_rsa_cert.pem";
     const CLIENT_KEY: &'static str = "../test-collateral/client_rsa_key.pem";
     const UNAUTHORIZED_CERT: &'static str = "../test-collateral/data_client_cert.pem";
-    const UNAUTHORIZED_KEY: &'static str = "../test-collateral/data_client_key.pem";
-    // Programs
+    const UNAUTHORIZED_KEY: &'static str = "../test-collateral/data_client_key.pem"; 
+   // Programs
     const RANDOM_SOURCE_WASM: &'static str = "../test-collateral/random-source.wasm";
     const READ_FILE_WASM: &'static str = "../test-collateral/read-file.wasm";
     const LINEAR_REGRESSION_WASM: &'static str = "../test-collateral/linear-regression.wasm";
@@ -86,6 +89,7 @@ mod tests {
     const INTERSECTION_SET_SUM_WASM: &'static str =
         "../test-collateral/private-set-intersection-sum.wasm";
     const NUMBER_STREM_WASM: &'static str = "../test-collateral/number-stream-accumulation.wasm";
+    const DEEP_LEARNING_WASM: &'static str = "../test-collateral/dl-server.wasm";
     // Data
     const LINEAR_REGRESSION_DATA: &'static str = "../test-collateral/linear-regression.dat";
     const INTERSECTION_SET_SUM_CUSTOMER_DATA: &'static str =
@@ -99,6 +103,13 @@ mod tests {
     const SINGLE_F64_DATA: &'static str = "../test-collateral/number-stream-init.dat";
     const VEC_F64_1_DATA: &'static str = "../test-collateral/number-stream-1.dat";
     const VEC_F64_2_DATA: &'static str = "../test-collateral/number-stream-2.dat";
+    const DL_DATA_ARGS_CFG: &'static str = "../test-collateral/args.cfg";
+    const DL_DATA_MODEL_CFG: &'static str = "../test-collateral/mnist_lenet.cfg";
+    const DL_DATA_LIST_CFG: &'static str = "../test-collateral/mnist.dataset";
+    const DL_DATA_WEIGHTS_CFG: &'static str = "../test-collateral/mnist_lenet.weights";
+    const DL_DATA_DATANAMES_CFG: &'static str = "../test-collateral/mnist.names.list";
+    const DL_DATA_IMAGE_CFG: &'static str = "../test-collateral/t_00000_c5.png";
+
     const LOGISTICS_REGRESSION_DATA_PATH: &'static str = "../test-collateral/idash2017/";
     const MACD_DATA_PATH: &'static str = "../test-collateral/macd/";
 
@@ -271,6 +282,25 @@ mod tests {
             client_key_filename,
         );
     }
+
+    #[test]
+    fn test_deep_learning_server_no_attestation() {
+        let result = test_template::<Vec<u8>>(
+            DEEP_LEARNING_SERVER_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(DEEP_LEARNING_WASM),
+            &[("args.cfg", DL_DATA_ARGS_CFG),
+            	("mnist_lenet.cfg", DL_DATA_MODEL_CFG),
+            	("mnist.dataset", DL_DATA_LIST_CFG),
+            	("mnist_lenet.weights", DL_DATA_WEIGHTS_CFG),
+            	("mnist.names.list", DL_DATA_DATANAMES_CFG),
+            	("t_00000_c5.png", DL_DATA_IMAGE_CFG)],
+            &[],
+        );
+        assert!(result.is_ok(), "error:{:?}", result);
+    }
+
 
     #[test]
     /// Integration test:

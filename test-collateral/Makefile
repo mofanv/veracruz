@@ -317,8 +317,7 @@ basic_file_read_write.json: pgen css-$(TEE).bin client_rsa_cert.pem read-file.wa
 
 deep_learning_server.json: pgen css-$(TEE).bin program_client_cert.pem data1_client_cert.pem data2_client_cert.pem dl-server.wasm
 	./pgen --certificate program_client_cert.pem --capability "dl-server.wasm: $(WRITE_RIGHT)" \
-		--certificate data1_client_cert.pem --capability "args.cfg: $(WRITE_RIGHT), mnist_lenet.cfg: $(WRITE_RIGHT), mnist.dataset: $(WRITE_RIGHT), mnist.names.list: $(WRITE_RIGHT), mnist_lenet.weights: $(WRITE_RIGHT), output: $(READ_RIGHT)" \
-		--certificate data2_client_cert.pem --capability "t_00000_c5.png: $(WRITE_RIGHT), output: $(READ_RIGHT)" \
+		--certificate client_rsa_cert.pem --capability "args.cfg: $(WRITE_RIGHT), mnist_lenet.cfg: $(WRITE_RIGHT), mnist.dataset: $(WRITE_RIGHT), mnist.names.list: $(WRITE_RIGHT), mnist_lenet.weights: $(WRITE_RIGHT), t_00000_c5.png: $(WRITE_RIGHT), output: $(READ_RIGHT)" \
 		--binary dl-server.wasm --capability "args.cfg: $(READ_RIGHT), mnist_lenet.cfg: $(READ_RIGHT), mnist.dataset: $(READ_RIGHT), mnist.names.list: $(READ_RIGHT), mnist_lenet.weights: $(READ_RIGHT), t_00000_c5.png: $(READ_RIGHT), output: $(WRITE_RIGHT)" \
 		--veracruz-server-ip 127.0.0.1:3027 --proxy-attestation-server-ip 127.0.0.1:3010 --output-policy-file $@ --certificate-expiry $(CERTIFICATE_EXPIRY) \
 		--enclave-debug-mode true --execution-strategy Interpretation \
