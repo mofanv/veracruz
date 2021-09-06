@@ -19,7 +19,12 @@ use optee_utee::{Random};
 /// Fills a buffer, `buffer`, with random bytes sampled from the thread-local
 /// random number source.  Uses the Optee trusted RTS library from the Rust TZ
 /// SDK to implement this.
-pub fn platform_getrandom(buffer: &mut [u8]) -> result::Result {
+pub fn platform_getrandom(buffer: &mut [u8]) -> result::Result<()> {
     Random::generate(buffer);
-    result::Result::Success
+    result::Result::Success(())
 }
+
+pub(crate) fn platform_get_real_time() -> result::Result<u128> {
+    Result::Unavailable
+}
+
