@@ -20,9 +20,18 @@ use getrandom;
 /// source provided by the host operating system, as provided by `getrandom`.
 ///
 /// This is for use with "freestanding-execution-engine".
-pub fn platform_getrandom(buffer: &mut [u8]) -> result::Result {
+pub fn platform_getrandom(buffer: &mut [u8]) -> result::Result<()> {
     if let Ok(_) = getrandom::getrandom(buffer) {
-        return result::Result::Success;
+        return result::Result::Success(());
     }
     result::Result::UnknownError
 }
+
+pub(crate) fn platform_get_real_time() -> result::Result<u128> {
+    use std::time::SystemTime;
+    match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(o) => super::result::Result::Success(o.as_nanos()),
+        Err(_) => super::result::Result::UnknownError,
+    }
+}
+
