@@ -178,6 +178,336 @@ mod tests {
         });
     }
 
+    #[test]
+    /// Load every valid policy file in the test-collateral/ and in
+    /// test-collateral/invalid_policy,
+    /// initialise an enclave.
+    fn test_phase1_init_destroy_enclave() {
+        // all the json in test-collateral should be valid policy
+        iterate_over_policy("../test-collateral/", |policy_json| {
+            let policy = Policy::from_json(&policy_json);
+            assert!(policy.is_ok());
+            if let Ok(policy) = policy {
+                setup(policy.proxy_attestation_server_url().clone());
+                let result = VeracruzServerEnclave::new(&policy_json);
+                assert!(result.is_ok(), "error:{:?}", result.err());
+            }
+        });
+
+        // If any json in test-collateral/invalid_policy is valid in Policy::new(),
+        // it must also valid in term of VeracruzServerEnclave::new()
+        iterate_over_policy("../test-collateral/invalid_policy/", |policy_json| {
+            let policy = Policy::from_json(&policy_json);
+            if let Ok(policy) = policy {
+                setup(policy.proxy_attestation_server_url().clone());
+                let result = VeracruzServerEnclave::new(&policy_json);
+                assert!(
+                    result.is_ok(),
+                    "error:{:?}, json:{:?}",
+                    result.err(),
+                    policy_json
+                );
+            }
+        });
+    }
+
+    #[test]
+    /// Load policy file and check if a new session tls can be opened
+    fn test_phase1_new_session() {
+        iterate_over_policy("../test-collateral/", |policy_json| {
+            let policy = Policy::from_json(&policy_json).unwrap();
+            // start the proxy attestation server
+            setup(policy.proxy_attestation_server_url().clone());
+            let result = init_veracruz_server_and_tls_session(policy_json);
+            assert!(result.is_ok(), "error:{:?}", result.err());
+        });
+    }
+
+    #[test]
+    /// Load the Veracruz server and generate the self-signed certificate
+    fn test_phase1_enclave_self_signed_cert() {
+        // start the proxy attestation server
+        iterate_over_policy("../test-collateral/", |policy_json| {
+            let policy = Policy::from_json(&policy_json).unwrap();
+            setup(policy.proxy_attestation_server_url().clone());
+            let result = VeracruzServerEnclave::new(&policy_json);
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    /// Test the attestation flow without sending any program or data into the Veracruz server
+    fn test_phase1_attestation_only() {
+        let (policy, policy_json, _) = read_policy(ONE_DATA_SOURCE_POLICY).unwrap();
+        setup(policy.proxy_attestation_server_url().clone());
+
+        let ret = VeracruzServerEnclave::new(&policy_json);
+
+        let _veracruz_server = ret.unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    /// Test if the detect for calling `debug!` in enclave works.
+    fn test_debug1_fire_test_on_debug() {
+        debug_setup();
+        DEBUG_IS_CALLED.store(false, Ordering::SeqCst);
+        debug!("Enclave debug message stud");
+        assert!(DEBUG_IS_CALLED.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    #[ignore]
+    /// Test if the detect for calling `debug!` in enclave works.
+    fn test_debug2_linear_regression_without_debug() {
+        debug_setup();
+        DEBUG_IS_CALLED.store(false, Ordering::SeqCst);
+        test_phase2_linear_regression_single_data_no_attestation();
+        assert!(!DEBUG_IS_CALLED.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    /// Attempt to establish a client session with the Veracruz server with an invalid client certificate
+    fn test_phase2_single_session_with_invalid_client_certificate() {
+        let (policy, policy_json, _) = read_policy(ONE_DATA_SOURCE_POLICY).unwrap();
+        // start the proxy attestation server
+        setup(policy.proxy_attestation_server_url().clone());
+        let (veracruz_server, _) = init_veracruz_server_and_tls_session(&policy_json).unwrap();
+
+        let client_cert_filename = "../test-collateral/never_used_cert.pem";
+        let client_key_filename = "../test-collateral/client_rsa_key.pem";
+
+        let mut _client_session = create_client_test_session(
+            client_cert_filename,
+            client_key_filename,
+        );
+    }
+
+
+    #[test]
+    /// Integration test:
+    /// computation: echoing
+    /// data sources: a single input under filename `input.txt`.
+    fn test_phase2_basic_file_read_write_no_attestation() {
+        let result = test_template::<Vec<u8>>(
+            BASIC_FILE_READ_WRITE_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(READ_FILE_WASM),
+            &[("input.txt", STRING_1_DATA)],
+            &[],
+        );
+        assert!(result.is_ok(), "error:{:?}", result);
+    }
+
+    #[test]
+    /// Integration test:
+    /// policy: PiProvider, DataProvider and ResultReader is the same party
+    /// computation: random-source, returning a vec of random u8
+    /// data sources: none
+    fn test_phase2_random_source_no_data_no_attestation() {
+        let result = test_template::<Vec<u8>>(
+            GET_RANDOM_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(RANDOM_SOURCE_WASM),
+            &[],
+            &[],
+        );
+        assert!(result.is_ok(), "error:{:?}", result);
+    }
+
+    #[test]
+    /// Attempt to fetch the result without program nor data
+    fn test_phase2_random_source_no_program_no_data() {
+        let result = test_template::<Vec<u8>>(
+            GET_RANDOM_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            None,
+            &[],
+            &[],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[test]
+    /// Attempt to provision a wrong program
+    fn test_phase2_incorrect_program_no_attestation() {
+        let result = test_template::<Vec<u8>>(
+            GET_RANDOM_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(STRING_EDIT_DISTANCE_WASM),
+            &[],
+            &[],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[test]
+    /// Attempt to use an unauthorized key
+    fn test_phase2_random_source_no_data_no_attestation_unauthorized_key() {
+        let result = test_template::<Vec<u8>>(
+            GET_RANDOM_POLICY,
+            CLIENT_CERT,
+            UNAUTHORIZED_KEY,
+            Some(RANDOM_SOURCE_WASM),
+            &[],
+            &[],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[test]
+    /// Attempt to use an unauthorized certificate
+    fn test_phase2_random_source_no_data_no_attestation_unauthorized_certificate() {
+        let result = test_template::<Vec<u8>>(
+            GET_RANDOM_POLICY,
+            UNAUTHORIZED_CERT,
+            CLIENT_KEY,
+            Some(RANDOM_SOURCE_WASM),
+            &[],
+            &[],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[test]
+    /// A unauthorized client attempt to connect the service
+    fn test_phase2_random_source_no_data_no_attestation_unauthorized_client() {
+        let result = test_template::<Vec<u8>>(
+            GET_RANDOM_POLICY,
+            UNAUTHORIZED_CERT,
+            UNAUTHORIZED_KEY,
+            Some(RANDOM_SOURCE_WASM),
+            &[],
+            &[],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[test]
+    /// Attempt to provision more data than expected
+    fn test_phase2_random_source_one_data_no_attestation() {
+        let result = test_template::<Vec<u8>>(
+            GET_RANDOM_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(RANDOM_SOURCE_WASM),
+            &[("input-0", LINEAR_REGRESSION_DATA)],
+            &[],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct LinearRegression {
+        /// Gradient of the linear relationship.
+        gradient: f64,
+        /// Y-intercept of the linear relationship.
+        intercept: f64,
+    }
+
+    #[test]
+    /// Integration test:
+    /// policy: PiProvider, DataProvider and ResultReader is the same party
+    /// computation: linear regression, computing the grandient and intercept, ie the LinearRegression struct,
+    /// given a series of point in the two-dimension space.
+    /// data sources: linear-regression, a vec of points in two-dimention space, representing by
+    /// Vec<(f64, f64)>
+    fn test_phase2_linear_regression_single_data_no_attestation() {
+        let result = test_template::<LinearRegression>(
+            LINEAR_REGRESSION_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(LINEAR_REGRESSION_WASM),
+            &[("input-0", LINEAR_REGRESSION_DATA)],
+            &[],
+        );
+        assert!(result.is_ok(), "error:{:?}", result);
+    }
+
+    #[test]
+    /// Attempt to fetch result without data
+    fn test_phase2_linear_regression_no_data_no_attestation() {
+        let result = test_template::<LinearRegression>(
+            LINEAR_REGRESSION_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(LINEAR_REGRESSION_WASM),
+            &[],
+            &[],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[test]
+    /// Integration test:
+    /// policy: PiProvider, DataProvider and ResultReader is the same party
+    /// computation: intersection sum, intersection of two data sources
+    /// and then the sum of the values in the intersection.
+    /// data sources: customer and advertisement, vecs of AdvertisementViewer and Customer
+    /// respectively.
+    /// ```no run
+    /// struct AdvertisementViewer { id: String }
+    /// struct Customer { id: String, total_spend: f64, }
+    /// ```
+    /// A standard two data source scenario, where the data provisioned in the
+    /// reversed order (data 1, then data 0)
+    fn test_phase2_intersection_sum_reversed_data_provisioning_two_data_no_attestation() {
+        let result = test_template::<f64>(
+            TWO_DATA_SOURCE_INTERSECTION_SET_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(CUSTOMER_ADS_INTERSECTION_SET_SUM_WASM),
+            &[
+                // message sends out in the reversed order
+                ("input-1", INTERSECTION_SET_SUM_CUSTOMER_DATA),
+                ("input-0", INTERSECTION_SET_SUM_ADVERTISEMENT_DATA),
+            ],
+            &[],
+        );
+        assert!(result.is_ok(), "error:{:?}", result);
+    }
+
+    #[test]
+    /// Integration test:
+    /// policy: PiProvider, DataProvider and ResultReader is the same party
+    /// computation: string-edit-distance, computing the string edit distance.
+    /// data sources: two strings
+    fn test_phase2_string_edit_distance_two_data_no_attestation() {
+        let result = test_template::<usize>(
+            TWO_DATA_SOURCE_STRING_EDIT_DISTANCE_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(STRING_EDIT_DISTANCE_WASM),
+            &[("input-0", STRING_1_DATA), ("input-1", STRING_2_DATA)],
+            &[],
+        );
+        assert!(result.is_ok(), "error:{:?}", result);
+    }
+
+    #[test]
+    /// Integration test:
+    /// policy: PiProvider, DataProvider and ResultReader is the same party
+    /// computation: linear regression, computing the grandient and intercept, ie the LinearRegression struct,
+    /// given a series of point in the two-dimension space.
+    /// data sources: linear-regression, a vec of points in two-dimention space, representing by
+    /// Vec<(f64, f64)>
+    /// A standard one data source scenario with attestation.
+    fn test_phase3_linear_regression_one_data_with_attestation() {
+        let result = test_template::<LinearRegression>(
+            ONE_DATA_SOURCE_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(LINEAR_REGRESSION_WASM),
+            &[("input-0", LINEAR_REGRESSION_DATA)],
+            &[],
+        );
+        assert!(result.is_ok(), "error:{:?}", result);
+    }
+
 
     #[test]
     fn test_deep_learning_server() {
@@ -201,6 +531,194 @@ mod tests {
 
 
 
+    #[derive(Debug, Deserialize, Clone, Eq, PartialEq, Hash)]
+    struct Person {
+        /// Name of the employee
+        name: String,
+        /// Internal ID of the employee
+        employee_id: String,
+        /// Age of the employee
+        age: u8,
+        /// Grade of the employee
+        grade: u8,
+    }
+
+    #[test]
+    /// Integration test:
+    /// policy: PiProvider, DataProvider and ResultReader is the same party
+    /// compuatation: set intersection, computing the intersection of two sets of persons.
+    /// data sources: two vecs of persons, representing by Vec<Person>
+    /// A standard two data sources scenario with attestation.
+    fn test_phase3_private_set_intersection_two_data_with_attestation() {
+        let result = test_template::<HashSet<Person>>(
+            TWO_DATA_SOURCE_PRIVATE_SET_INTERSECTION_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(PERSON_SET_INTERSECTION_WASM),
+            &[
+                ("input-0", PERSON_SET_1_DATA),
+                ("input-1", PERSON_SET_2_DATA),
+            ],
+            &[],
+        );
+        assert!(result.is_ok(), "error:{:?}", result);
+    }
+
+    #[test]
+    /// Integration test:
+    /// policy: PiProvider, DataProvider, StreamProvider and ResultReader is the same party
+    /// compuatation: sum of an initial f64 number and two streams of f64 numbers.
+    /// data sources: an initial f64 value, and two vecs of f64, representing two streams.
+    /// A standard one data source and two stream sources scenario with attestation.
+    fn test_phase4_number_stream_accumulation_one_data_two_stream_with_attestation() {
+        let result = test_template::<(u64, f64)>(
+            NUMBER_STREAM_ACCUMULATION_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(NUMBER_STREM_WASM),
+            &[("input-0", SINGLE_F64_DATA)],
+            &[("stream-0", VEC_F64_1_DATA), ("stream-1", VEC_F64_2_DATA)],
+        );
+        assert!(result.is_ok(), "error:{:?}", result);
+    }
+
+    #[test]
+    /// Attempt to fetch result without enough stream data.
+    fn test_phase4_number_stream_accumulation_one_data_one_stream_with_attestation() {
+        let result = test_template::<f64>(
+            NUMBER_STREAM_ACCUMULATION_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(NUMBER_STREM_WASM),
+            &[("input-0", SINGLE_F64_DATA)],
+            &[("stream-0", VEC_F64_1_DATA)],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[test]
+    /// Attempt to provision stream data in the state of loading static data.
+    fn test_phase4_number_stream_accumulation_no_data_two_stream_with_attestation() {
+        let result = test_template::<f64>(
+            NUMBER_STREAM_ACCUMULATION_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(NUMBER_STREM_WASM),
+            &[],
+            &[("stream-0", VEC_F64_1_DATA), ("stream-1", VEC_F64_2_DATA)],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[test]
+    /// Attempt to provision more stream data.
+    fn test_phase4_number_stream_accumulation_no_data_three_stream_with_attestation() {
+        let result = test_template::<f64>(
+            NUMBER_STREAM_ACCUMULATION_POLICY,
+            CLIENT_CERT,
+            CLIENT_KEY,
+            Some(NUMBER_STREM_WASM),
+            &[],
+            &[
+                ("stream-0", VEC_F64_1_DATA),
+                ("stream-1", VEC_F64_2_DATA),
+                ("stream-2", VEC_F64_1_DATA),
+            ],
+        );
+        assert!(result.is_err(), "An error should occur");
+    }
+
+    #[test]
+    /// Performance test:
+    /// policy: PiProvider, DataProvider and ResultReader is the same party
+    /// computation: logistic regression, https://github.com/kimandrik/IDASH2017.
+    /// data sources: idash2017/*.dat
+    fn test_performance_idash2017_with_attestation() {
+        iterate_over_data(LOGISTICS_REGRESSION_DATA_PATH, |data_path| {
+            info!("Data path: {}", data_path);
+            let result = test_template::<(Vec<f64>, f64, f64)>(
+                IDASH2017_POLICY,
+                CLIENT_CERT,
+                CLIENT_KEY,
+                Some(LOGISTICS_REGRESSION_WASM),
+                &[("input-0", data_path)],
+                &[],
+            );
+            assert!(result.is_ok(), "error:{:?}", result);
+        });
+    }
+
+    #[test]
+    /// Performance test:
+    /// policy: PiProvider, DataProvider and ResultReader is the same party
+    /// computation: moving-average-convergence-divergence, https://github.com/woonhulktin/HETSA.
+    /// data sources: macd/*.dat
+    fn test_performance_macd_with_attestation() {
+        iterate_over_data(MACD_DATA_PATH, |data_path| {
+            info!("Data path: {}", data_path);
+            // call the test_template with info flag on,
+            // which prints out the time
+            let result = test_template::<Vec<f64>>(
+                MACD_POLICY,
+                CLIENT_CERT,
+                CLIENT_KEY,
+                Some(MACD_WASM),
+                &[("input-0", data_path)],
+                &[],
+            );
+            assert!(result.is_ok(), "error:{:?}", result);
+        });
+    }
+
+    /// This test was written to test an issue.
+    /// The issue was that the key storage in Mbed Crypto was being exhausted
+    /// in the proxy attestation server.
+    /// The fix was to delete keys after they are used.
+    /// This test creates 32 enclaves, each of which attests against the proxy
+    /// attestation server.
+    /// To generate the dataset for this test:
+    /// - Go to directory: sdk/utility/macd2bincode
+    /// - execute run.sh . It generates more than 32 datasets of the form *.dat .
+    /// - Manually copy all *.dat to sdk/datasets/macd
+    #[test]
+    #[ignore]
+    fn test_multiple_keys() {
+        iterate_over_data(MACD_WASM, |data_path| {
+            // call the test_template with info flag on,
+            // which prints out the time
+            let result = test_template::<Vec<f64>>(
+                MULTIPLE_KEY_POLICY,
+                CLIENT_CERT,
+                CLIENT_KEY,
+                Some(MACD_DATA_PATH),
+                &[("input-0", data_path)],
+                &[],
+            );
+            assert!(result.is_ok(), "error:{:?}", result);
+        });
+    }
+
+    #[test]
+    /// Performance test:
+    /// policy: PiProvider, DataProvider and ResultReader is the same party
+    /// computation: intersection-sum, matching the setting in .
+    /// data sources: private-set-inter-sum/*.dat
+    fn test_performance_set_intersection_sum_with_attestation() {
+        iterate_over_data("../test-collateral/private-set-inter-sum/", |data_path| {
+            info!("Data path: {}", data_path);
+            // call the test_template with info flag on,
+            // which prints out the time
+            let result = test_template::<(usize, u64)>(
+                PRIVATE_SET_INTER_SUM_POLICY,
+                CLIENT_CERT,
+                CLIENT_KEY,
+                Some(INTERSECTION_SET_SUM_WASM),
+                &[("input-0", data_path)],
+                &[],
+            );
+            assert!(result.is_ok(), "error:{:?}", result);
+        });
+    }
 
     /// This is the template of test cases for veracruz-server,
     /// ensuring it is a single client policy,

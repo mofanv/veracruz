@@ -109,7 +109,8 @@ DATA_FILES = linear-regression.dat \
 			 mnist.dataset \
 			 mnist_lenet.weights \
 			 mnist.names.list \
-			 t_00000_c5.png
+			 t_00000_c5.png \
+			 output
 
 DATA_DIRS = idash2017 \
             macd \
@@ -315,12 +316,12 @@ basic_file_read_write.json: pgen css-$(TEE).bin client_rsa_cert.pem read-file.wa
 		--css-file $(RUNTIME_MANAGER_CSS_BIN) --pcr-file $(RUNTIME_MANAGER_PCR0) \
 		--proxy-attestation-server-cert ../test-collateral/CACert.pem
 
-deep_learning_server.json: pgen css-$(TEE).bin program_client_cert.pem data1_client_cert.pem data2_client_cert.pem dl-server.wasm
-	./pgen --certificate program_client_cert.pem --capability "dl-server.wasm: $(WRITE_RIGHT)" \
-		--certificate client_rsa_cert.pem --capability "args.cfg: $(WRITE_RIGHT), mnist_lenet.cfg: $(WRITE_RIGHT), mnist.dataset: $(WRITE_RIGHT), mnist.names.list: $(WRITE_RIGHT), mnist_lenet.weights: $(WRITE_RIGHT), t_00000_c5.png: $(WRITE_RIGHT), output: $(READ_RIGHT)" \
-		--binary dl-server.wasm --capability "args.cfg: $(READ_RIGHT), mnist_lenet.cfg: $(READ_RIGHT), mnist.dataset: $(READ_RIGHT), mnist.names.list: $(READ_RIGHT), mnist_lenet.weights: $(READ_RIGHT), t_00000_c5.png: $(READ_RIGHT), output: $(WRITE_RIGHT)" \
+deep_learning_server.json: pgen css-$(TEE).bin client_rsa_cert.pem dl-server.wasm
+	./pgen --certificate client_rsa_cert.pem --capability "/dl-server.wasm : $(READ_WRITE_RIGHT), /args.cfg : $(READ_WRITE_RIGHT), /mnist_lenet.cfg : $(READ_WRITE_RIGHT), /mnist.dataset : $(READ_WRITE_RIGHT), /mnist.names.list : $(READ_WRITE_RIGHT), /mnist_lenet.weights : $(READ_WRITE_RIGHT), /t_00000_c5.png : $(READ_WRITE_RIGHT), /output : $(READ_WRITE_RIGHT)" \
+		--binary dl-server.wasm --capability "/output : $(READ_WRITE_RIGHT), /args.cfg : $(READ_WRITE_RIGHT), /mnist_lenet.cfg : $(READ_WRITE_RIGHT), /mnist.dataset : $(READ_WRITE_RIGHT), /mnist.names.list : $(READ_WRITE_RIGHT), /mnist_lenet.weights : $(READ_WRITE_RIGHT), /t_00000_c5.png : $(READ_WRITE_RIGHT)" \
 		--veracruz-server-ip 127.0.0.1:3027 --proxy-attestation-server-ip 127.0.0.1:3010 --output-policy-file $@ --certificate-expiry $(CERTIFICATE_EXPIRY) \
 		--enclave-debug-mode true --execution-strategy Interpretation \
+		--stdin "stdin : $(READ_RIGHT)" --stdout "stdout : $(WRITE_RIGHT)" --stderr "stderr : $(WRITE_RIGHT)" \
 		--css-file $(RUNTIME_MANAGER_CSS_BIN) --pcr-file $(RUNTIME_MANAGER_PCR0) \
 		--proxy-attestation-server-cert ../test-collateral/CACert.pem
 
