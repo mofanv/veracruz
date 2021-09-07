@@ -19,7 +19,7 @@
 //! See the `LICENSE_MIT.markdown` file in the Veracruz root directory for
 //! information on licensing and copyright.
 
-#![no_std]
+#![cfg_attr(feature = "sgx", no_std)]
 
 use crate::result::Result;
 use cfg_if::cfg_if;
@@ -62,10 +62,13 @@ cfg_if! {
 ///     - `result::Result::UnknownError` if a runtime error occurred during
 ///       generation of the random numbers.  In which case, the contents of
 ///       `buffer` are undefined.
-pub fn getrandom(buffer: &mut [u8]) -> result::Result {
+pub fn getrandom(buffer: &mut [u8]) -> result::Result<()> {
     if buffer.is_empty() {
-        return Result::Success;
+        return Result::Success(());
     } else {
         imp::platform_getrandom(buffer)
     }
+}
+pub fn get_real_time() -> result::Result<u128> {
+    imp::platform_get_real_time()
 }

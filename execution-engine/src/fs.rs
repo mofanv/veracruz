@@ -15,7 +15,7 @@
 //! information on licensing and copyright.
 
 use log::info;
-use platform_services::{getrandom, result};
+use platform_services::{getrandom, get_real_time, result};
 use std::{
     collections::HashMap,
     convert::{AsRef, TryInto},
@@ -709,7 +709,8 @@ impl FileSystem {
 
     /// The stub implementation of `clock_res_get`. Return unsupported error `NoSys`.
     #[inline]
-    pub(crate) fn clock_res_get(&self, _clock_id: ClockId) -> FileSystemResult<Timestamp> {
+    pub(crate) fn clock_res_get(&self, clock_id: ClockId) -> FileSystemResult<Timestamp> {
+        info!("call clock_res_get id {:?}", clock_id);
         Err(ErrNo::NoSys)
     }
 
@@ -717,10 +718,18 @@ impl FileSystem {
     #[inline]
     pub(crate) fn clock_time_get(
         &self,
-        _clock_id: ClockId,
-        _precision: Timestamp,
+        clock_id: ClockId,
+        precision: Timestamp,
     ) -> FileSystemResult<Timestamp> {
-        Err(ErrNo::NoSys)
+        info!("call clock_time_get id {:?} and precision {:?}", clock_id, precision);
+        match clock_id {
+            ClockId::RealTime => if let result::Result::Success(time) = get_real_time() {
+                Ok((time as u64).into())
+            } else {
+                Err(ErrNo::NoSys)
+            },
+            _otherwise => Err(ErrNo::NoSys)
+        }
     }
 
     /// Allows the programmer to declare how they intend to use various parts of
@@ -1321,7 +1330,7 @@ impl FileSystem {
     #[inline]
     pub(crate) fn random_get(&self, buf_len: Size) -> FileSystemResult<Vec<u8>> {
         let mut buf = vec![0; buf_len as usize];
-        if let result::Result::Success = getrandom(&mut buf) {
+        if let result::Result::Success(_) = getrandom(&mut buf) {
             Ok(buf)
         } else {
             Err(ErrNo::NoSys)
