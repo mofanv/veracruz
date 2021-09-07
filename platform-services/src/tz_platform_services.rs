@@ -25,6 +25,6 @@ pub fn platform_getrandom(buffer: &mut [u8]) -> result::Result<()> {
 }
 
 pub(crate) fn platform_get_real_time() -> result::Result<u128> {
-    Result::Unavailable
+    result::Result::Unavailable
 }
 

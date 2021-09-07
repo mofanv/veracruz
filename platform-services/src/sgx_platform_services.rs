@@ -28,5 +28,5 @@ pub fn platform_getrandom(buffer: &mut [u8]) -> result::Result<()> {
 
 pub(crate) fn platform_get_real_time() -> result::Result<u128> {
     //TODO impl this
-    Result::Success(0)
+    result::Result::Success(0)
 }
